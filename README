@@ -1,0 +1,21 @@
+Theano implementation of dropout.
+
+Run with:
+
+     ./mlp.py dropout
+
+for dropout, or 
+
+    ./mlp.py backprop
+
+for regular backprop with no dropout.
+
+Use:
+
+    ./plot_results.sh results.png
+
+to visualize the results.
+
+Based on code from:
+- http://deeplearning.net/tutorial/mlp.html
+- http://deeplearning.net/tutorial/logreg.html
