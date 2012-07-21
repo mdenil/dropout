@@ -11,7 +11,7 @@ import theano.printing
 import theano.tensor.shared_randomstreams
 
 from logistic_sgd import LogisticRegression
-from load_data import load_data
+from load_data import load_umontreal_data, load_mnist
 
 
 class HiddenLayer(object):
@@ -126,7 +126,7 @@ class MLP(object):
 
 
 def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
-        layer_sizes, dataset='data/mnist.pkl.gz'):
+        layer_sizes, dataset):
     """
     The dataset is the one from the mlp demo on deeplearning.net.  This training
     function is lifted from there almost exactly.
@@ -137,8 +137,7 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
 
 
     """
-    datasets = load_data(dataset)
-
+    datasets = load_mnist(dataset)
     train_set_x, train_set_y = datasets[0]
     valid_set_x, valid_set_y = datasets[1]
     test_set_x, test_set_y = datasets[2]
@@ -299,9 +298,11 @@ if __name__ == '__main__':
     import sys
 
     learning_rate = 0.01
-    n_epochs = 1000
+    n_epochs = 3000
     batch_size = 100
-    layer_sizes = [ 28*28, 800, 800, 10 ]
+    layer_sizes = [ 28*28, 1500, 1500, 1500, 10 ]
+    dataset = 'data/mnist_batches.npz'
+    #dataset = 'data/mnist.pkl.gz'
 
     if len(sys.argv) < 2:
         print "Usage: {0} [dropout|backprop]".format(sys.argv[0])
@@ -324,5 +325,6 @@ if __name__ == '__main__':
              batch_size=batch_size,
              layer_sizes=layer_sizes,
              dropout=dropout,
+             dataset=dataset,
              results_file_name=results_file_name)
 
