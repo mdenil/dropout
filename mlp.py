@@ -46,6 +46,18 @@ class HiddenLayer(object):
         self.params = [self.W, self.b]
 
 
+def _dropout_from_layer(rng, layer, p):
+    """p is the probablity of dropping a unit
+    """
+    srng = theano.tensor.shared_randomstreams.RandomStreams(
+            rng.randint(999999))
+    # p=1-p because 1's indicate keep and p is prob of dropping
+    mask = srng.binomial(n=1, p=1-p, size=layer.shape)
+    # The cast is important because
+    # int * float32 = float64 which pulls things off the gpu
+    output = layer * T.cast(mask, theano.config.floatX)
+    return output
+
 class DropoutHiddenLayer(HiddenLayer):
     def __init__(self, rng, input, n_in, n_out,
                  activation, W=None, b=None):
@@ -53,12 +65,7 @@ class DropoutHiddenLayer(HiddenLayer):
                 rng=rng, input=input, n_in=n_in, n_out=n_out, W=W, b=b,
                 activation=activation)
 
-        self.srng = theano.tensor.shared_randomstreams.RandomStreams(
-                rng.randint(999999))
-        mask = self.srng.binomial(n=1, p=0.5, size=self.output.shape)
-        # The cast is important because
-        # int * float32 = float64 which pulls things off the gpu
-        self.output = self.output * T.cast(mask, theano.config.floatX)
+        self.output = _dropout_from_layer(rng, self.output, p=0.5)
 
 
 class MLP(object):
@@ -78,7 +85,8 @@ class MLP(object):
         self.layers = []
         self.dropout_layers = []
         next_layer_input = input
-        next_dropout_layer_input = input
+        # dropout the input with prob 0.2
+        next_dropout_layer_input = _dropout_from_layer(rng, input, p=0.2)
         for n_in, n_out in weight_matrix_sizes[:-1]:
             next_dropout_layer = DropoutHiddenLayer(rng=rng,
                     input=next_dropout_layer_input,
@@ -218,7 +226,8 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
     print '... training'
 
     # early-stopping parameters
-    patience = 10000  # look as this many examples regardless
+    #patience = 10000  # look as this many examples regardless
+    patience = 100000  # look as this many examples regardless
     patience_increase = 2  # wait this much longer when a new best is
                            # found
     improvement_threshold = 0.995  # a relative improvement of this much is
@@ -300,7 +309,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     n_epochs = 3000
     batch_size = 100
-    layer_sizes = [ 28*28, 1500, 1500, 1500, 10 ]
+    layer_sizes = [ 28*28, 800, 800, 10 ]
     dataset = 'data/mnist_batches.npz'
     #dataset = 'data/mnist.pkl.gz'
 
