@@ -134,7 +134,7 @@ class MLP(object):
 
 
 def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
-        layer_sizes, dataset):
+        mom, layer_sizes, dataset):
     """
     The dataset is the one from the mlp demo on deeplearning.net.  This training
     function is lifted from there almost exactly.
@@ -196,18 +196,28 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
     #theano.printing.pydotprint(validate_model, outfile="validate_file.png",
     #        var_with_name_simple=True)
 
-    # compute the gradient of cost with respect to theta (sotred in params)
-    # the resulting gradients will be stored in a list gparams
+    # Compute gradients of the model wrt parameters
     gparams = []
     for param in classifier.params:
         # Use the right cost function here to train with or without dropout.
         gparam = T.grad(dropout_cost if dropout else cost, param)
         gparams.append(gparam)
 
-    # specify how to update the parameters of the model as a dictionary
+    # ... and momentum'd versions of the gradient
+    gparams_mom = []
+    for param in classifier.params:
+        gparam_mom = theano.shared(np.zeros(param.get_value(borrow=True).shape,
+            dtype=theano.config.floatX))
+        gparams_mom.append(gparam_mom)
+
+    # Update the step direction using momentum
     updates = {}
-    for param, gparam in zip(classifier.params, gparams):
-        updates[param] = param - learning_rate * gparam
+    for gparam_mom, gparam in zip(gparams_mom, gparams):
+        updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
+
+    # ... and take a step along that direction
+    for param, gparam_mom in zip(classifier.params, gparams_mom):
+        updates[param] = param - learning_rate * gparam_mom
 
     # Compile theano function for training.  This returns the training cost and
     # updates the model parameters.
@@ -225,74 +235,34 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
     ###############
     print '... training'
 
-    # early-stopping parameters
-    #patience = 10000  # look as this many examples regardless
-    patience = 100000  # look as this many examples regardless
-    patience_increase = 2  # wait this much longer when a new best is
-                           # found
-    improvement_threshold = 0.995  # a relative improvement of this much is
-                                   # considered significant
-    validation_frequency = min(n_train_batches, patience / 2)
-                                  # go through this many
-                                  # minibatche before checking the network
-                                  # on the validation set; in this case we
-                                  # check every epoch
-
     best_params = None
-    best_validation_loss = np.inf
+    best_validation_errors = np.inf
     best_iter = 0
     test_score = 0.
-    start_time = time.clock()
-
     epoch = 0
-    done_looping = False
+    start_time = time.clock()
 
     results_file = open(results_file_name, 'wb')
 
-    while (epoch < n_epochs) and (not done_looping):
+    while epoch < n_epochs:
+        # Train this epoch
         epoch = epoch + 1
         for minibatch_index in xrange(n_train_batches):
-
             minibatch_avg_cost = train_model(minibatch_index)
-            # iteration number
-            iter = epoch * n_train_batches + minibatch_index
 
-            if (iter + 1) % validation_frequency == 0:
-                # compute zero-one loss on validation set
-                validation_losses = [validate_model(i) for i in xrange(n_valid_batches)]
-                this_validation_loss = np.mean(validation_losses)
-                total_validation_errors = np.sum(validation_losses)
+        # Compute loss on validation set
+        validation_losses = [validate_model(i) for i in xrange(n_valid_batches)]
+        this_validation_errors = np.sum(validation_losses)
 
-                print('epoch %i, minibatch %i/%i, validation error %f %%' %
-                     (epoch, minibatch_index + 1, n_train_batches,
-                      this_validation_loss * 100.))
+        # Report and save progress.
+        print "epoch {0}, minibatch {1}/{2}, test error {3}{4}".format(
+                epoch, minibatch_index + 1, n_train_batches, this_validation_errors,
+                " **" if this_validation_errors < best_validation_errors else "")
 
-                results_file.write("{0}\n".format(total_validation_errors))
-                results_file.flush()
-
-                # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
-                    #improve patience if loss improvement is good enough
-                    if this_validation_loss < best_validation_loss *  \
-                           improvement_threshold:
-                        patience = max(patience, iter * patience_increase)
-
-                    best_validation_loss = this_validation_loss
-                    best_iter = iter
-
-                    # test it on the test set
-                    test_losses = [test_model(i) for i
-                                   in xrange(n_test_batches)]
-                    test_score = np.mean(test_losses)
-
-                    print(('     epoch %i, minibatch %i/%i, test error of '
-                           'best model %f %%') %
-                          (epoch, minibatch_index + 1, n_train_batches,
-                           test_score * 100.))
-
-            if patience <= iter:
-                    done_looping = True
-                    break
+        best_validation_errors = min(best_validation_errors,
+                this_validation_errors)
+        results_file.write("{0}\n".format(this_validation_errors))
+        results_file.flush()
 
     end_time = time.clock()
     print(('Optimization complete. Best validation score of %f %% '
@@ -309,6 +279,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     n_epochs = 3000
     batch_size = 100
+    mom = 0.9
     layer_sizes = [ 28*28, 800, 800, 10 ]
     dataset = 'data/mnist_batches.npz'
     #dataset = 'data/mnist.pkl.gz'
@@ -332,6 +303,7 @@ if __name__ == '__main__':
     test_mlp(learning_rate=learning_rate,
              n_epochs=n_epochs,
              batch_size=batch_size,
+             mom=mom,
              layer_sizes=layer_sizes,
              dropout=dropout,
              dataset=dataset,
