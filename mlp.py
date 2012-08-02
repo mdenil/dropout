@@ -7,6 +7,7 @@ import time
 
 import theano
 import theano.tensor as T
+from theano.ifelse import ifelse
 import theano.printing
 import theano.tensor.shared_randomstreams
 
@@ -23,12 +24,15 @@ class HiddenLayer(object):
 
         if W is None:
             # Initialization from deeplearning.net tutorial.
-            W_values = np.asarray(rng.uniform(
-                    low=-np.sqrt(6. / (n_in + n_out)),
-                    high=np.sqrt(6. / (n_in + n_out)),
-                    size=(n_in, n_out)), dtype=theano.config.floatX)
-            if activation == theano.tensor.nnet.sigmoid:
-                W_values *= 4
+#            W_values = np.asarray(rng.uniform(
+#                    low=-np.sqrt(6. / (n_in + n_out)),
+#                    high=np.sqrt(6. / (n_in + n_out)),
+#                    size=(n_in, n_out)), dtype=theano.config.floatX)
+#            if activation == theano.tensor.nnet.sigmoid:
+#                W_values *= 4
+
+            W_values = np.asarray(0.01 * rng.standard_normal(
+                size=(n_in, n_out)), dtype=theano.config.floatX)
 
             W = theano.shared(value=W_values, name='W')
         
@@ -39,11 +43,12 @@ class HiddenLayer(object):
         self.W = W
         self.b = b
 
-        lin_output = T.dot(input, self.W) + self.b
+        lin_output = T.dot(input, self.W)# + self.b
         self.output = (lin_output if activation is None else activation(lin_output))
     
         # parameters of the model
-        self.params = [self.W, self.b]
+        self.params = [self.W]
+        #self.params = [self.W, self.b]
 
 
 def _dropout_from_layer(rng, layer, p):
@@ -133,8 +138,16 @@ class MLP(object):
         self.params = [ param for layer in self.dropout_layers for param in layer.params ]
 
 
-def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
-        mom, layer_sizes, dataset):
+def test_mlp(
+        initial_learning_rate,
+        learning_rate_decay,
+        squared_filter_length_limit,
+        n_epochs,
+        batch_size,
+        dropout,
+        results_file_name,
+        layer_sizes,
+        dataset):
     """
     The dataset is the one from the mlp demo on deeplearning.net.  This training
     function is lifted from there almost exactly.
@@ -163,9 +176,12 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
 
     # allocate symbolic variables for the data
     index = T.lscalar()    # index to a [mini]batch
+    epoch = T.scalar()
     x = T.matrix('x')  # the data is presented as rasterized images
     y = T.ivector('y')  # the labels are presented as 1D vector of
                         # [int] labels
+    learning_rate = theano.shared(np.asarray(initial_learning_rate,
+        dtype=theano.config.floatX))
 
     rng = np.random.RandomState(1234)
 
@@ -203,12 +219,18 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
         gparam = T.grad(dropout_cost if dropout else cost, param)
         gparams.append(gparam)
 
-    # ... and momentum'd versions of the gradient
+    # ... and allocate mmeory for momentum'd versions of the gradient
     gparams_mom = []
     for param in classifier.params:
         gparam_mom = theano.shared(np.zeros(param.get_value(borrow=True).shape,
             dtype=theano.config.floatX))
         gparams_mom.append(gparam_mom)
+
+    # Compute momentum for the current epoch
+    #mom = 0.5*(1. - epoch/500.) + 0.99*(epoch/500.)
+    mom = ifelse(epoch < 500,
+            0.5*(1. - epoch/500.) + 0.99*(epoch/500.),
+            0.99)
 
     # Update the step direction using momentum
     updates = {}
@@ -217,18 +239,36 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
 
     # ... and take a step along that direction
     for param, gparam_mom in zip(classifier.params, gparams_mom):
-        updates[param] = param - learning_rate * gparam_mom
+        stepped_param = param - (1.-mom) * learning_rate * gparam_mom
+
+        # This is a silly hack to constrain the norms of the rows of the weight
+        # matrices.  This just checks if there are two dimensions to the
+        # parameter and constrains it if so... maybe this is a bit silly but it
+        # should work for now.
+        if param.get_value(borrow=True).ndim == 2:
+            squared_norms = T.sum(stepped_param**2, axis=1).reshape((stepped_param.shape[0],1))
+            scale = T.clip(T.sqrt(squared_filter_length_limit / squared_norms), 0., 1.)
+            updates[param] = stepped_param * scale
+        else:
+            updates[param] = stepped_param
+
 
     # Compile theano function for training.  This returns the training cost and
     # updates the model parameters.
     output = dropout_cost if dropout else cost
-    train_model = theano.function(inputs=[index], outputs=output,
+    train_model = theano.function(inputs=[epoch, index], outputs=output,
             updates=updates,
             givens={
                 x: train_set_x[index * batch_size:(index + 1) * batch_size],
                 y: train_set_y[index * batch_size:(index + 1) * batch_size]})
     #theano.printing.pydotprint(train_model, outfile="train_file.png",
     #        var_with_name_simple=True)
+
+    # Theano function to decay the learning rate, this is separate from the
+    # training function because we only want to do this once each epoch instead
+    # of after each minibatch.
+    decay_learning_rate = theano.function(inputs=[], outputs=learning_rate,
+            updates={learning_rate: learning_rate * learning_rate_decay})
 
     ###############
     # TRAIN MODEL #
@@ -239,24 +279,25 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
     best_validation_errors = np.inf
     best_iter = 0
     test_score = 0.
-    epoch = 0
+    epoch_counter = 0
     start_time = time.clock()
 
     results_file = open(results_file_name, 'wb')
 
-    while epoch < n_epochs:
+    while epoch_counter < n_epochs:
         # Train this epoch
-        epoch = epoch + 1
+        epoch_counter = epoch_counter + 1
         for minibatch_index in xrange(n_train_batches):
-            minibatch_avg_cost = train_model(minibatch_index)
+            minibatch_avg_cost = train_model(epoch_counter, minibatch_index)
 
         # Compute loss on validation set
         validation_losses = [validate_model(i) for i in xrange(n_valid_batches)]
         this_validation_errors = np.sum(validation_losses)
 
         # Report and save progress.
-        print "epoch {0}, minibatch {1}/{2}, test error {3}{4}".format(
-                epoch, minibatch_index + 1, n_train_batches, this_validation_errors,
+        print "epoch {}, test error {}, learning_rate={}{}".format(
+                epoch_counter, this_validation_errors,
+                learning_rate.get_value(borrow=True),
                 " **" if this_validation_errors < best_validation_errors else "")
 
         best_validation_errors = min(best_validation_errors,
@@ -264,10 +305,12 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
         results_file.write("{0}\n".format(this_validation_errors))
         results_file.flush()
 
+        new_learning_rate = decay_learning_rate()
+
     end_time = time.clock()
     print(('Optimization complete. Best validation score of %f %% '
            'obtained at iteration %i, with test performance %f %%') %
-          (best_validation_loss * 100., best_iter, test_score * 100.))
+          (best_validation_errors * 100., best_iter, test_score * 100.))
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
@@ -276,11 +319,12 @@ def test_mlp(learning_rate, n_epochs, batch_size, dropout, results_file_name,
 if __name__ == '__main__':
     import sys
 
-    learning_rate = 0.01
+    initial_learning_rate = 1.0
+    learning_rate_decay = 0.998
+    squared_filter_length_limit = 15.0
     n_epochs = 3000
     batch_size = 100
-    mom = 0.9
-    layer_sizes = [ 28*28, 800, 800, 10 ]
+    layer_sizes = [ 28*28, 1200, 1200, 10 ]
     dataset = 'data/mnist_batches.npz'
     #dataset = 'data/mnist.pkl.gz'
 
@@ -300,10 +344,11 @@ if __name__ == '__main__':
         print "I don't know how to '{0}'".format(sys.argv[1])
         exit(1)
 
-    test_mlp(learning_rate=learning_rate,
+    test_mlp(initial_learning_rate=initial_learning_rate,
+             learning_rate_decay=learning_rate_decay,
+             squared_filter_length_limit=squared_filter_length_limit,
              n_epochs=n_epochs,
              batch_size=batch_size,
-             mom=mom,
              layer_sizes=layer_sizes,
              dropout=dropout,
              dataset=dataset,
