@@ -23,17 +23,8 @@ class HiddenLayer(object):
         self.activation = activation
 
         if W is None:
-            # Initialization from deeplearning.net tutorial.
-#            W_values = np.asarray(rng.uniform(
-#                    low=-np.sqrt(6. / (n_in + n_out)),
-#                    high=np.sqrt(6. / (n_in + n_out)),
-#                    size=(n_in, n_out)), dtype=theano.config.floatX)
-#            if activation == theano.tensor.nnet.sigmoid:
-#                W_values *= 4
-
             W_values = np.asarray(0.01 * rng.standard_normal(
                 size=(n_in, n_out)), dtype=theano.config.floatX)
-
             W = theano.shared(value=W_values, name='W')
         
         if b is None:
@@ -194,7 +185,6 @@ def test_mlp(
     dropout_cost = classifier.dropout_negative_log_likelihood(y)
 
     # Compile theano function for testing.
-    #errors = classifier.dropout_errors(y) if dropout else classifier.errors(y)
     test_model = theano.function(inputs=[index],
             outputs=classifier.errors(y),
             givens={
@@ -227,7 +217,6 @@ def test_mlp(
         gparams_mom.append(gparam_mom)
 
     # Compute momentum for the current epoch
-    #mom = 0.5*(1. - epoch/500.) + 0.99*(epoch/500.)
     mom = ifelse(epoch < 500,
             0.5*(1. - epoch/500.) + 0.99*(epoch/500.),
             0.99)
