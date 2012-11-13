@@ -1,0 +1,17 @@
+#!/usr/bin/python
+
+import sys
+
+if len(sys.argv) == 1:
+    mom = 0.9
+else:
+    mom = float(sys.argv[1])
+
+ave = None
+for x in open("/dev/stdin"):
+    if ave is None:
+        ave = float(x)
+    else:
+        ave = mom*ave + (1.-mom)*float(x)
+
+    print ave
