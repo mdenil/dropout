@@ -17,7 +17,8 @@ from load_data import load_umontreal_data, load_mnist
 
 class HiddenLayer(object):
     def __init__(self, rng, input, n_in, n_out,
-                 activation, W=None, b=None):
+                 activation, W=None, b=None,
+                 use_bias):
 
         self.input = input
         self.activation = activation
@@ -34,11 +35,18 @@ class HiddenLayer(object):
         self.W = W
         self.b = b
 
-        lin_output = T.dot(input, self.W) + self.b
+        if use_bias:
+            lin_output = T.dot(input, self.W) + self.b
+        else:
+            lin_output = T.dot(input, self.W)
+
         self.output = (lin_output if activation is None else activation(lin_output))
     
         # parameters of the model
-        self.params = [self.W, self.b]
+        if use_bias:
+            self.params = [self.W, self.b]
+        else:
+            self.params = [self.W]
 
 
 def _dropout_from_layer(rng, layer, p):
@@ -55,10 +63,10 @@ def _dropout_from_layer(rng, layer, p):
 
 class DropoutHiddenLayer(HiddenLayer):
     def __init__(self, rng, input, n_in, n_out,
-                 activation, W=None, b=None):
+                 activation, use_bias, W=None, b=None):
         super(DropoutHiddenLayer, self).__init__(
                 rng=rng, input=input, n_in=n_in, n_out=n_out, W=W, b=b,
-                activation=activation)
+                activation=activation, use_bias=use_bias)
 
         self.output = _dropout_from_layer(rng, self.output, p=0.5)
 
@@ -71,7 +79,8 @@ class MLP(object):
     def __init__(self,
             rng,
             input,
-            layer_sizes):
+            layer_sizes,
+            use_bias=True):
 
         rectified_linear_activation = lambda x: T.maximum(0.0, x)
 
@@ -86,7 +95,7 @@ class MLP(object):
             next_dropout_layer = DropoutHiddenLayer(rng=rng,
                     input=next_dropout_layer_input,
                     activation=rectified_linear_activation,
-                    n_in=n_in, n_out=n_out)
+                    n_in=n_in, n_out=n_out, use_bias=use_bias)
             self.dropout_layers.append(next_dropout_layer)
             next_dropout_layer_input = next_dropout_layer.output
 
@@ -97,7 +106,8 @@ class MLP(object):
                     activation=rectified_linear_activation,
                     W=next_dropout_layer.W * 0.5,
                     b=next_dropout_layer.b,
-                    n_in=n_in, n_out=n_out)
+                    n_in=n_in, n_out=n_out,
+                    use_bias=use_bias)
             self.layers.append(next_layer)
             next_layer_input = next_layer.output
         
@@ -137,7 +147,8 @@ def test_mlp(
         dropout,
         results_file_name,
         layer_sizes,
-        dataset):
+        dataset,
+        use_bias):
     """
     The dataset is the one from the mlp demo on deeplearning.net.  This training
     function is lifted from there almost exactly.
@@ -177,7 +188,7 @@ def test_mlp(
 
     # construct the MLP class
     classifier = MLP(rng=rng, input=x,
-           layer_sizes=layer_sizes)
+           layer_sizes=layer_sizes, use_bias=use_bias)
 
     # Build the expresson for the cost function.
     cost = classifier.negative_log_likelihood(y)
@@ -340,5 +351,6 @@ if __name__ == '__main__':
              layer_sizes=layer_sizes,
              dropout=dropout,
              dataset=dataset,
-             results_file_name=results_file_name)
+             results_file_name=results_file_name,
+             use_bias=False)
 
