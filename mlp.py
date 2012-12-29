@@ -18,7 +18,7 @@ from load_data import load_umontreal_data, load_mnist
 class HiddenLayer(object):
     def __init__(self, rng, input, n_in, n_out,
                  activation, W=None, b=None,
-                 use_bias):
+                 use_bias=False):
 
         self.input = input
         self.activation = activation
