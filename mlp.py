@@ -240,7 +240,7 @@ def test_mlp(
 
     # ... and take a step along that direction
     for param, gparam_mom in zip(classifier.params, gparams_mom):
-        stepped_param = param - (1.-mom) * learning_rate * gparam_mom
+        stepped_param = param - learning_rate * updates[gparam_mom]
 
         # This is a silly hack to constrain the norms of the rows of the weight
         # matrices.  This just checks if there are two dimensions to the
