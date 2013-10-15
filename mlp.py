@@ -89,6 +89,7 @@ class MLP(object):
         self.layers = []
         self.dropout_layers = []
         next_layer_input = input
+        first_layer = True
         # dropout the input with prob 0.2
         next_dropout_layer_input = _dropout_from_layer(rng, input, p=0.2)
         for n_in, n_out in weight_matrix_sizes[:-1]:
@@ -104,12 +105,13 @@ class MLP(object):
             next_layer = HiddenLayer(rng=rng,
                     input=next_layer_input,
                     activation=rectified_linear_activation,
-                    W=next_dropout_layer.W * 0.5,
+                    W=next_dropout_layer.W * (0.8 if first_layer else 0.5),
                     b=next_dropout_layer.b,
                     n_in=n_in, n_out=n_out,
                     use_bias=use_bias)
             self.layers.append(next_layer)
             next_layer_input = next_layer.output
+            first_layer = False
         
         # Set up the output layer
         n_in, n_out = weight_matrix_sizes[-1]
