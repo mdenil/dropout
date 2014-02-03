@@ -4,6 +4,7 @@ import gzip
 import os
 import sys
 import time
+from collections import OrderedDict
 
 import theano
 import theano.tensor as T
@@ -234,7 +235,7 @@ def test_mlp(
             0.99)
 
     # Update the step direction using momentum
-    updates = {}
+    updates = OrderedDict()
     for gparam_mom, gparam in zip(gparams_mom, gparams):
         updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
 
