@@ -21,5 +21,5 @@ Based on code from:
 - http://deeplearning.net/tutorial/logreg.html
 
 Use the data here to make the units of the results comparable to Hinton's paper:
-- http://www.cs.ubc.ca/~mdenil/hidden/mnist_batches.npz
+- http://www.cs.ox.ac.uk/people/misha.denil/hidden/mnist_batches.npz
 
