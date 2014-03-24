@@ -134,6 +134,7 @@ class MLP(object):
             self.layers.append(next_layer)
             next_layer_input = next_layer.output
             #first_layer = False
+            layer_counter += 1
         
         # Set up the output layer
         n_in, n_out = weight_matrix_sizes[-1]
