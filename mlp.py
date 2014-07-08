@@ -117,7 +117,7 @@ class MLP(object):
                     input=next_dropout_layer_input,
                     activation=activations[layer_counter],
                     n_in=n_in, n_out=n_out, use_bias=use_bias,
-                    dropout_rate=dropout_rates[layer_counter])
+                    dropout_rate=dropout_rates[layer_counter + 1])
             self.dropout_layers.append(next_dropout_layer)
             next_dropout_layer_input = next_dropout_layer.output
 
